@@ -8,8 +8,8 @@
         {
             "name": "PlatformIO",
             "includePath": [
-                "/Users/koji/MD_Rev1_PIO/Inc",
-                "/Users/koji/MD_Rev1_PIO/Src",
+                "/Users/koji/develop/SoccerRobot2024/Software/MD_Rev1.1_PIO/Inc",
+                "/Users/koji/develop/SoccerRobot2024/Software/MD_Rev1.1_PIO/Src",
                 "/Users/koji/.platformio/packages/framework-stm32cubeg4/Drivers/CMSIS/Include",
                 "/Users/koji/.platformio/packages/framework-stm32cubeg4/Drivers/CMSIS/Device/ST/STM32G4xx/Include",
                 "/Users/koji/.platformio/packages/framework-stm32cubeg4/Drivers/STM32G4xx_HAL_Driver/Inc",
@@ -54,8 +54,8 @@
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "/Users/koji/MD_Rev1_PIO/Inc",
-                    "/Users/koji/MD_Rev1_PIO/Src",
+                    "/Users/koji/develop/SoccerRobot2024/Software/MD_Rev1.1_PIO/Inc",
+                    "/Users/koji/develop/SoccerRobot2024/Software/MD_Rev1.1_PIO/Src",
                     "/Users/koji/.platformio/packages/framework-stm32cubeg4/Drivers/CMSIS/Include",
                     "/Users/koji/.platformio/packages/framework-stm32cubeg4/Drivers/CMSIS/Device/ST/STM32G4xx/Include",
                     "/Users/koji/.platformio/packages/framework-stm32cubeg4/Drivers/STM32G4xx_HAL_Driver/Inc",
