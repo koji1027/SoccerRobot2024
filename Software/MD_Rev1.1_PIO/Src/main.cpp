@@ -65,6 +65,7 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN 0 */
 Motor motor;
 
+uint16_t adc1Value = 0;
 uint16_t adc2Value[2] = {0};
 
 asm(" .global _printf_float");
@@ -105,15 +106,17 @@ int main(void) {
     MX_TIM16_Init();
     MX_TIM17_Init();
     MX_USART1_UART_Init();
-    MX_TIM8_Init();
     MX_ADC2_Init();
     MX_OPAMP2_Init();
+    MX_ADC1_Init();
+    MX_OPAMP3_Init();
     /* USER CODE BEGIN 2 */
     setbuf(stdout, NULL);
 
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&adc1Value, 1);
     HAL_ADC_Start_DMA(&hadc2, (uint32_t *)adc2Value, 2);
 
     motor.begin();
@@ -122,12 +125,11 @@ int main(void) {
     HAL_TIM_Base_Start_IT(&htim16);
     HAL_TIM_Base_Start_IT(&htim17);
 
-    HAL_Delay(1000);
+    HAL_Delay(2000);
 
     // motor.calibrateEnc();
 
     motor.motorDriveFlag = true;
-
     /* USER CODE END 2 */
 
     /* Infinite loop */
@@ -194,52 +196,60 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM15) {  // 50us
         // 正弦波駆動
         static int adcUpdateCnt = 0;
-        if (adcUpdateCnt++ == 4) {  // 200us
+        if (adcUpdateCnt == 5) {  // 200us
             adcUpdateCnt = 0;
-            motor.updateEncValue(adc2Value[0]);
+            motor.updateEncValue(adc1Value);
+        }
+        adcUpdateCnt++;
+
+        static int driveCnt = 0;
+        if (motor.motorDriveFlag && driveCnt++ == 4) {  // 200us
+            driveCnt = 0;
+            float phase = motor.calPhase(&motor);
+            motor.driveSinWave(phase, motor.power);
+            // motor.driveSinWave(phase, 500);
         }
 
-        // static int driveCnt = 0;
-        // if (motor.motorDriveFlag && driveCnt++ == 4) {  // 200us
-        //     driveCnt = 0;
-        //     uint16_t encValue = 4096 + adc2Value[0] - motor.encOffset;
-        //     encValue = encValue % 4096;
-        //     float electricAngle = encValue % 575;
-        //     electricAngle = electricAngle * 2.0f * M_PI / 575.0f;
-        //     float phase = 0.0f;
-        //     if (!motor.turn) {
-        //         phase = electricAngle + motor.advancedAngle[0];
-        //     } else {
-        //         phase = electricAngle + motor.advancedAngle[1];
+        // static int cnt = 0;
+        // if (cnt == 10) {
+        //     cnt = 0;
+        //     static float i = 0.0f;
+        //     motor.driveSinWave(i, 300);
+        //     i += 0.1f;
+        //     if (i > 2.0f * M_PI) {
+        //         i = 0.0f;
         //     }
-        //     motor.driveSinWave(phase, 300);
         // }
-
-        static int cnt = 0;
-        if (cnt == 10) {
-            cnt = 0;
-            static float i = 0.0f;
-            motor.driveSinWave(i, 300);
-            i += 0.1f;
-            if (i > 2.0f * M_PI) {
-                i = 0.0f;
-            }
-        }
-        cnt++;
+        // cnt++;
     }
+
     if (htim->Instance == TIM16) {  // 1ms
         static uint16_t calRpmCnt = 0;
         motor.calRpm(calRpmCnt++);
-        if (calRpmCnt == 50) {
+        if (calRpmCnt % 50 == 0) {
             motor.correctRpm();
         }
         if (calRpmCnt == 1000) {
             calRpmCnt = 0;
         }
+        static int printCnt = 0;
+        if (printCnt == 100) {
+            printCnt = 0;
+            // printf("adc2Value: %d, %d\n", adc2Value[0], adc2Value[1]);
+        }
+        printCnt++;
+
+        static int powerCnt = 0;
+        if (powerCnt == 50) {
+            powerCnt = 0;
+            motor.power = motor.calPower(&motor);
+        }
+        powerCnt++;
     }
     if (htim->Instance == TIM17) {  // 1s
         HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_4);
         HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+        printf("power: %d\n", motor.power);
         // printf("Toggle LED\n");
     }
 }

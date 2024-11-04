@@ -10,8 +10,7 @@
 Motor::Motor() {
     encOffset = 779;
     // encOffset = 0;
-    turn = 0;
-    advancedAngle[0] = -160.0f / 180.0f * M_PI;
+    advancedAngle[0] = -175.0f / 180.0f * M_PI;
     advancedAngle[1] = 100.0f / 180.0f * M_PI;
     motorDriveFlag = false;
     encRawValue = 0;
@@ -19,10 +18,16 @@ Motor::Motor() {
     rpm[0] = 0.0f;
     rpm[1] = 0.0f;
     rpm[2] = 0.0f;
-    period[0] = 5;    // 5ms
-    period[1] = 25;   // 25ms
-    period[2] = 125;  // 125ms
+    periodSlow[0] = 5;    // 5ms
+    periodSlow[1] = 25;   // 25ms
+    periodSlow[2] = 125;  // 125ms
+    periodFast[0] = 1;    // 1ms
+    periodFast[1] = 5;    // 5ms
+    periodFast[2] = 25;   // 25ms
     correctedRpm = 0.0f;
+    targetRpm = -1500.0f;
+    power = 0;
+    speedFlag = 0;
 }
 
 void Motor::begin() {
@@ -34,10 +39,6 @@ void Motor::begin() {
     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
 
     this->brake();
-}
-
-void Motor::setTurn(bool turn) {
-    this->turn = turn;
 }
 
 void Motor::setAdvancedAngle(float angle0, float angle1) {
@@ -166,70 +167,133 @@ void Motor::brake() {
 }
 
 void Motor::calRpm(uint16_t calRpmCnt) {
-    if (calRpmCnt % period[0] == 0) {  // 5ms
-        static uint16_t prevEncValue = 0;
-        int32_t encValueDiff = encValue - prevEncValue;
-        if (encValueDiff > 2048) {
-            encValueDiff -= 4096;
-        } else if (encValueDiff < -2048) {
-            encValueDiff += 4096;
+    if (!speedFlag) {                          // 低速時
+        if (calRpmCnt % periodSlow[0] == 0) {  // 5ms
+            static uint16_t prevEncValue = 0;
+            int32_t encValueDiff = prevEncValue - encValue;
+            if (encValueDiff > 2048) {
+                encValueDiff -= 4096;
+            } else if (encValueDiff < -2048) {
+                encValueDiff += 4096;
+            }
+            prevEncValue = encValue;
+            float _rpm = (float)encValueDiff / 4096.0f * 60.0f / (float)periodSlow[0] * 1000.0f;
+            static float prevRpm[4] = {0.0f};
+            float rpmSum = _rpm;
+            for (int i = 0; i < 3; i++) {
+                rpmSum += prevRpm[i];
+                prevRpm[i] = prevRpm[i + 1];
+            }
+            rpmSum += prevRpm[3];
+            prevRpm[3] = _rpm;
+            rpm[0] = rpmSum / 5.0f;
         }
-        prevEncValue = encValue;
-        float _rpm = (float)encValueDiff / 4096.0f * 60.0f / (float)period[0] * 1000.0f;
-        static float prevRpm[4] = {0.0f};
-        float rpmSum = _rpm;
-        for (int i = 0; i < 3; i++) {
-            rpmSum += prevRpm[i];
-            prevRpm[i] = prevRpm[i + 1];
+        if (calRpmCnt % periodSlow[1] == 0) {  // 25ms
+            static uint16_t prevEncValue = 0;
+            int32_t encValueDiff = prevEncValue - encValue;
+            if (encValueDiff > 2048) {
+                encValueDiff -= 4096;
+            } else if (encValueDiff < -2048) {
+                encValueDiff += 4096;
+            }
+            prevEncValue = encValue;
+            float _rpm = (float)encValueDiff / 4096.0f * 60.0f / (float)periodSlow[1] * 1000.0f;
+            static float prevRpm[4] = {0.0f};
+            float rpmSum = _rpm;
+            for (int i = 0; i < 3; i++) {
+                rpmSum += prevRpm[i];
+                prevRpm[i] = prevRpm[i + 1];
+            }
+            rpmSum += prevRpm[3];
+            prevRpm[3] = _rpm;
+            rpm[1] = rpmSum / 5.0f;
         }
-        rpmSum += prevRpm[3];
-        prevRpm[3] = _rpm;
-        rpm[0] = rpmSum / 5.0f;
-    }
-    if (calRpmCnt % period[1] == 0) {  // 25ms
-        static uint16_t prevEncValue = 0;
-        int32_t encValueDiff = encValue - prevEncValue;
-        if (encValueDiff > 2048) {
-            encValueDiff -= 4096;
-        } else if (encValueDiff < -2048) {
-            encValueDiff += 4096;
+        if (calRpmCnt % periodSlow[2] == 0) {  // 125ms
+            static uint16_t prevEncValue = 0;
+            int32_t encValueDiff = prevEncValue - encValue;
+            if (encValueDiff > 2048) {
+                encValueDiff -= 4096;
+            } else if (encValueDiff < -2048) {
+                encValueDiff += 4096;
+            }
+            prevEncValue = encValue;
+            float _rpm = (float)encValueDiff / 4096.0f * 60.0f / (float)periodSlow[2] * 1000.0f;
+            static float prevRpm[4] = {0.0f};
+            float rpmSum = _rpm;
+            for (int i = 0; i < 3; i++) {
+                rpmSum += prevRpm[i];
+                prevRpm[i] = prevRpm[i + 1];
+            }
+            rpmSum += prevRpm[3];
+            prevRpm[3] = _rpm;
+            rpm[2] = rpmSum / 5.0f;
         }
-        prevEncValue = encValue;
-        float _rpm = (float)encValueDiff / 4096.0f * 60.0f / (float)period[1] * 1000.0f;
-        static float prevRpm[4] = {0.0f};
-        float rpmSum = _rpm;
-        for (int i = 0; i < 3; i++) {
-            rpmSum += prevRpm[i];
-            prevRpm[i] = prevRpm[i + 1];
+    } else {                                   // 高速時
+        if (calRpmCnt % periodFast[0] == 0) {  // 5ms
+            static uint16_t prevEncValue = 0;
+            int32_t encValueDiff = prevEncValue - encValue;
+            if (encValueDiff > 2048) {
+                encValueDiff -= 4096;
+            } else if (encValueDiff < -2048) {
+                encValueDiff += 4096;
+            }
+            prevEncValue = encValue;
+            float _rpm = (float)encValueDiff / 4096.0f * 60.0f / (float)periodFast[0] * 1000.0f;
+            static float prevRpm[4] = {0.0f};
+            float rpmSum = _rpm;
+            for (int i = 0; i < 3; i++) {
+                rpmSum += prevRpm[i];
+                prevRpm[i] = prevRpm[i + 1];
+            }
+            rpmSum += prevRpm[3];
+            prevRpm[3] = _rpm;
+            rpm[0] = rpmSum / 5.0f;
         }
-        rpmSum += prevRpm[3];
-        prevRpm[3] = _rpm;
-        rpm[1] = rpmSum / 5.0f;
-    }
-    if (calRpmCnt % period[2] == 0) {  // 125ms
-        static uint16_t prevEncValue = 0;
-        int32_t encValueDiff = encValue - prevEncValue;
-        if (encValueDiff > 2048) {
-            encValueDiff -= 4096;
-        } else if (encValueDiff < -2048) {
-            encValueDiff += 4096;
+        if (calRpmCnt % periodFast[1] == 0) {  // 25ms
+            static uint16_t prevEncValue = 0;
+            int32_t encValueDiff = prevEncValue - encValue;
+            if (encValueDiff > 2048) {
+                encValueDiff -= 4096;
+            } else if (encValueDiff < -2048) {
+                encValueDiff += 4096;
+            }
+            prevEncValue = encValue;
+            float _rpm = (float)encValueDiff / 4096.0f * 60.0f / (float)periodFast[1] * 1000.0f;
+            static float prevRpm[4] = {0.0f};
+            float rpmSum = _rpm;
+            for (int i = 0; i < 3; i++) {
+                rpmSum += prevRpm[i];
+                prevRpm[i] = prevRpm[i + 1];
+            }
+            rpmSum += prevRpm[3];
+            prevRpm[3] = _rpm;
+            rpm[1] = rpmSum / 5.0f;
         }
-        prevEncValue = encValue;
-        float _rpm = (float)encValueDiff / 4096.0f * 60.0f / (float)period[2] * 1000.0f;
-        static float prevRpm[4] = {0.0f};
-        float rpmSum = _rpm;
-        for (int i = 0; i < 3; i++) {
-            rpmSum += prevRpm[i];
-            prevRpm[i] = prevRpm[i + 1];
+        if (calRpmCnt % periodFast[2] == 0) {  // 125ms
+            static uint16_t prevEncValue = 0;
+            int32_t encValueDiff = prevEncValue - encValue;
+            if (encValueDiff > 2048) {
+                encValueDiff -= 4096;
+            } else if (encValueDiff < -2048) {
+                encValueDiff += 4096;
+            }
+            prevEncValue = encValue;
+            float _rpm = (float)encValueDiff / 4096.0f * 60.0f / (float)periodFast[2] * 1000.0f;
+            static float prevRpm[4] = {0.0f};
+            float rpmSum = _rpm;
+            for (int i = 0; i < 3; i++) {
+                rpmSum += prevRpm[i];
+                prevRpm[i] = prevRpm[i + 1];
+            }
+            rpmSum += prevRpm[3];
+            prevRpm[3] = _rpm;
+            rpm[2] = rpmSum / 5.0f;
         }
-        rpmSum += prevRpm[3];
-        prevRpm[3] = _rpm;
-        rpm[2] = rpmSum / 5.0f;
     }
 
-    if (calRpmCnt % 100 == 0) {
-        printf("rpm: %d, %d, %d, %d\n", (int)rpm[0], (int)rpm[1], (int)rpm[2], (int)correctedRpm);
-    }
+    // if (calRpmCnt % 100 == 0) {
+    //     printf("rpm: %d, %d, %d, %d\n", (int)rpm[0], (int)rpm[1], (int)rpm[2], (int)correctedRpm);
+    // }
 }
 
 void Motor::correctRpm() {
@@ -238,35 +302,89 @@ void Motor::correctRpm() {
     float rpmMax = rpm[0];
     float rpmMid = rpm[0];
     float rpmMin = rpm[0];
-    for (int i = 1; i < 2; i++) {
-        if (rpm[i] > rpmMax) {
-            rpmMax = rpm[i];
-        } else if (rpm[i] < rpmMin) {
-            rpmMin = rpm[i];
+    if (rpmMax >= 0 && rpmMid >= 0 && rpmMin >= 0) {
+        for (int i = 1; i < 2; i++) {
+            if (rpm[i] > rpmMax) {
+                rpmMax = rpm[i];
+            } else if (rpm[i] < rpmMin) {
+                rpmMin = rpm[i];
+            } else {
+                rpmMid = rpm[i];
+            }
+        }
+        if (abs(rpmMax / rpmMid) < 1.1f) {
+            if (abs(rpmMid / rpmMin) < 1.1f) {
+                correctedRpm = (rpmMax + rpmMid + rpmMin) / 3.0f;
+            } else {
+                correctedRpm = (rpmMax + rpmMid) / 2.0f;
+            }
         } else {
-            rpmMid = rpm[i];
+            if (abs(rpmMid / rpmMin) < 1.1f) {
+                correctedRpm = (rpmMid + rpmMin) / 2.0f;
+            }
+            // それ以外の場合は信頼できるrpmがないので何もしない
+        }
+    } else if (rpmMax < 0 && rpmMid < 0 && rpmMin < 0) {
+        for (int i = 1; i < 2; i++) {
+            if (rpm[i] < rpmMax) {
+                rpmMax = rpm[i];
+            } else if (rpm[i] > rpmMin) {
+                rpmMin = rpm[i];
+            } else {
+                rpmMid = rpm[i];
+            }
+        }
+        if (abs(rpmMax / rpmMid) < 1.1f) {
+            if (abs(rpmMid / rpmMin) < 1.1f) {
+                correctedRpm = (rpmMax + rpmMid + rpmMin) / 3.0f;
+            } else {
+                correctedRpm = (rpmMax + rpmMid) / 2.0f;
+            }
+        } else {
+            if (abs(rpmMid / rpmMin) < 1.1f) {
+                correctedRpm = (rpmMid + rpmMin) / 2.0f;
+            }
+            // それ以外の場合は信頼できるrpmがないので何もしない
         }
     }
-    if (abs(rpmMax / rpmMid) < 1.1f) {
-        if (abs(rpmMid / rpmMin) < 1.1f) {
-            correctedRpm = (rpmMax + rpmMid + rpmMin) / 3.0f;
-        } else {
-            correctedRpm = (rpmMax + rpmMid) / 2.0f;
-        }
+    if (abs(correctedRpm) > 400.0f) {
+        speedFlag = 1;
     } else {
-        if (abs(rpmMid / rpmMin) < 1.1f) {
-            correctedRpm = (rpmMid + rpmMin) / 2.0f;
-        }
-        // それ以外の場合は信頼できるrpmがないので何もしない
+        speedFlag = 0;
     }
+}
 
-    static float _prevCorrectedRpm[4] = {0.0f};
-    float correctedRpmSum = correctedRpm;
-    for (int i = 0; i < 3; i++) {
-        correctedRpmSum += _prevCorrectedRpm[i];
-        _prevCorrectedRpm[i] = _prevCorrectedRpm[i + 1];
+float Motor::calPhase(Motor* motor) {
+    float electricAngle = motor->encValue % 575;
+    electricAngle = electricAngle * 2.0f * M_PI / 575.0f;
+    float phase = 0.0f;
+    if (motor->targetRpm > 0) {
+        phase = electricAngle + motor->advancedAngle[0];
+    } else {
+        phase = electricAngle + motor->advancedAngle[1];
     }
-    correctedRpmSum += _prevCorrectedRpm[3];
-    _prevCorrectedRpm[3] = correctedRpm;
-    correctedRpm = correctedRpmSum / 5.0f;
+    return phase;
+}
+
+uint16_t Motor::calPower(Motor* motor) {
+    if (motor->targetRpm == 0.0f) {
+        return 0;
+    } else {
+        float diffRpm = motor->targetRpm - motor->correctedRpm;
+        float p = 0.04f * diffRpm;
+        static float prevDiffRpm = 0.0f;
+        float d = 0.01f * (diffRpm - prevDiffRpm);
+        prevDiffRpm = diffRpm;
+        if (targetRpm > 0) {
+            motor->power += p + d;
+        } else {
+            motor->power -= p + d;
+        }
+        if (motor->power > 1000) {
+            motor->power = 1000;
+        } else if (motor->power < 0) {
+            motor->power = 0;
+        }
+        return motor->power;
+    }
 }
