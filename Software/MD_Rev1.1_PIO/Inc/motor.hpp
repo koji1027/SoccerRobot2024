@@ -10,7 +10,7 @@ class Motor {
     void driveSinWave(float phase, uint16_t power);
     void setAdvancedAngle(float angle0, float angle1);  // 0:正転, 1:逆転
     void setEncOffset(uint16_t offset);
-    void calibrateEnc();
+    void calibrateEnc(uint16_t &_encRawValue);
     void updateEncValue(uint16_t encValue);
     void brake();
     void calRpm(uint16_t calRpmCnt);
@@ -26,8 +26,9 @@ class Motor {
     float advancedAngle[2];  // 0:正転, 1:逆転
     float rpm[3];            // 0: short_rpm, 1: middle_rpm, 2: long_rpm
     float correctedRpm;
-    uint16_t periodSlow[3];  // 0: short_period, 1: middle_period, 2: long_period
-    uint16_t periodFast[3];  // 0: short_period, 1: middle_period, 2: long_period
+    uint32_t periodSlow[3];  // 0: short_period, 1: middle_period, 2: long_period
+    uint32_t periodFast[3];  // 0: short_period, 1: middle_period, 2: long_period
     float targetRpm;
     bool speedFlag;  // 0: slow, 1: fast
+    uint16_t maxDuty;
 };

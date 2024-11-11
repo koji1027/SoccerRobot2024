@@ -8,10 +8,10 @@
 #define M_PI 3.14159265358979323846
 
 Motor::Motor() {
-    encOffset = 779;
+    encOffset = 233;
     // encOffset = 0;
-    advancedAngle[0] = -175.0f / 180.0f * M_PI;
-    advancedAngle[1] = 100.0f / 180.0f * M_PI;
+    advancedAngle[0] = -180.0f / 180.0f * M_PI;
+    advancedAngle[1] = 135.0f / 180.0f * M_PI;
     motorDriveFlag = false;
     encRawValue = 0;
     encValue = 0;
@@ -23,11 +23,12 @@ Motor::Motor() {
     periodSlow[2] = 125;  // 125ms
     periodFast[0] = 1;    // 1ms
     periodFast[1] = 5;    // 5ms
-    periodFast[2] = 25;   // 25ms
+    periodFast[2] = 20;   // 25ms
     correctedRpm = 0.0f;
-    targetRpm = -1500.0f;
+    targetRpm = 300.0f;
     power = 0;
     speedFlag = 0;
+    maxDuty = 500;
 }
 
 void Motor::begin() {
@@ -50,34 +51,35 @@ void Motor::setEncOffset(uint16_t offset) {
     encOffset = offset;
 }
 
-void Motor::calibrateEnc() {
+void Motor::calibrateEnc(uint16_t& _encRawValue) {
     uint32_t encValueSumTurn1 = 0;
     uint16_t encOffsetTurn1 = 0;
-    for (int k = 0; k < 5; k++) {
+    for (int k = 0; k < 3; k++) {
         for (int i = 0; i < 7; i++) {
             for (int j = 0; j < 6; j++) {
                 driveSquareWave(j, 300);
-                HAL_Delay(3);
+                HAL_Delay(5);
             }
         }
-        encValueSumTurn1 += encRawValue;
+        // printf("%d\n", _encRawValue);
+        encValueSumTurn1 += _encRawValue;
     }
-    encOffsetTurn1 = (uint16_t)((float)encValueSumTurn1 / 5.0f);
+    encOffsetTurn1 = (uint16_t)((float)encValueSumTurn1 / 3.0f);
 
     HAL_Delay(200);
 
     uint32_t encValueSumTurn0 = 0;
     uint16_t encOffsetTurn0 = 0;
-    for (int k = 0; k < 5; k++) {
+    for (int k = 0; k < 3; k++) {
         for (int i = 0; i < 7; i++) {
             for (int j = 10; j > 4; j--) {
                 driveSquareWave(j % 6, 300);
-                HAL_Delay(3);
+                HAL_Delay(5);
             }
         }
-        encValueSumTurn0 += encRawValue;
+        encValueSumTurn0 += _encRawValue;
     }
-    encOffsetTurn0 = (uint16_t)((float)encValueSumTurn0 / 5.0f);
+    encOffsetTurn0 = (uint16_t)((float)encValueSumTurn0 / 3.0f);
 
     encOffset = (float)(encOffsetTurn0 + encOffsetTurn1) / 2.0f;
     printf("encOffset: %d\n", encOffset);
@@ -93,42 +95,42 @@ void Motor::calibrateEnc() {
 }
 
 void Motor::driveSquareWave(uint8_t state, uint16_t power) {
-    if (state == 0) {
+    if (state == 0) {                                            // A -> B
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_2, power);      // HA
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, power);      // LA
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_1, 0);          // HB
         __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, 0);          // LB
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_2, power / 2);  // HC
         __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, power / 2);  // LC
-    } else if (state == 1) {
+    } else if (state == 1) {                                     // A -> C
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_2, power);      // HA
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, power);      // LA
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_1, power / 2);  // HB
         __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, power / 2);  // LB
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_2, 0);          // HC
         __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, 0);          // LC
-    } else if (state == 2) {
+    } else if (state == 2) {                                     // B -> C
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_2, power / 2);  // HA
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, power / 2);  // LA
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_1, power);      // HB
         __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, power);      // LB
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_2, 0);          // HC
         __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, 0);          // LC
-    } else if (state == 3) {
+    } else if (state == 3) {                                     // B -> A
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_2, 0);          // HA
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, 0);          // LA
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_1, power);      // HB
         __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, power);      // LB
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_2, power / 2);  // HC
         __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, power / 2);  // LC
-    } else if (state == 4) {
+    } else if (state == 4) {                                     // C -> A
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_2, 0);          // HA
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, 0);          // LA
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_1, power / 2);  // HB
         __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, power / 2);  // LB
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_2, power);      // HC
         __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, power);      // LC
-    } else if (state == 5) {
+    } else if (state == 5) {                                     // C -> B
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_2, power / 2);  // HA
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, power / 2);  // LA
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_1, 0);          // HB
@@ -347,7 +349,7 @@ void Motor::correctRpm() {
             // それ以外の場合は信頼できるrpmがないので何もしない
         }
     }
-    if (abs(correctedRpm) > 400.0f) {
+    if (abs(correctedRpm) > 800.0f) {
         speedFlag = 1;
     } else {
         speedFlag = 0;
@@ -371,20 +373,21 @@ uint16_t Motor::calPower(Motor* motor) {
         return 0;
     } else {
         float diffRpm = motor->targetRpm - motor->correctedRpm;
-        float p = 0.04f * diffRpm;
+        float p = 0.10f * diffRpm;
         static float prevDiffRpm = 0.0f;
-        float d = 0.01f * (diffRpm - prevDiffRpm);
+        float d = 0.02f * (diffRpm - prevDiffRpm);
         prevDiffRpm = diffRpm;
         if (targetRpm > 0) {
             motor->power += p + d;
         } else {
             motor->power -= p + d;
         }
-        if (motor->power > 1000) {
-            motor->power = 1000;
+        if (motor->power > maxDuty) {
+            motor->power = maxDuty;
         } else if (motor->power < 0) {
             motor->power = 0;
         }
-        return motor->power;
+        // return motor->power;
+        return 400;
     }
 }

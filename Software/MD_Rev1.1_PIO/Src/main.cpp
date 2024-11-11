@@ -116,20 +116,32 @@ int main(void) {
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 
+    HAL_OPAMP_MspInit(&hopamp2);
+    HAL_OPAMP_MspInit(&hopamp3);
+
+    HAL_OPAMP_Init(&hopamp2);
+    HAL_OPAMP_Init(&hopamp3);
+
+    HAL_OPAMP_Start(&hopamp2);
+    HAL_OPAMP_Start(&hopamp3);
+
     HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&adc1Value, 1);
     HAL_ADC_Start_DMA(&hadc2, (uint32_t *)adc2Value, 2);
+    HAL_TIM_Base_Start_IT(&htim2);
 
     motor.begin();
+
+    HAL_Delay(2000);
+
+    // motor.calibrateEnc(adc1Value);
+
+    printf("Start\n");
 
     HAL_TIM_Base_Start_IT(&htim15);
     HAL_TIM_Base_Start_IT(&htim16);
     HAL_TIM_Base_Start_IT(&htim17);
 
-    HAL_Delay(2000);
-
-    // motor.calibrateEnc();
-
-    motor.motorDriveFlag = true;
+    motor.motorDriveFlag = 1;
     /* USER CODE END 2 */
 
     /* Infinite loop */
@@ -196,31 +208,22 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM15) {  // 50us
         // 正弦波駆動
         static int adcUpdateCnt = 0;
-        if (adcUpdateCnt == 5) {  // 200us
+        if (adcUpdateCnt == 4) {  // 200us
             adcUpdateCnt = 0;
             motor.updateEncValue(adc1Value);
         }
         adcUpdateCnt++;
 
         static int driveCnt = 0;
-        if (motor.motorDriveFlag && driveCnt++ == 4) {  // 200us
-            driveCnt = 0;
-            float phase = motor.calPhase(&motor);
-            motor.driveSinWave(phase, motor.power);
-            // motor.driveSinWave(phase, 500);
+        if (motor.motorDriveFlag) {  // 200us
+            if (driveCnt++ == 4) {
+                driveCnt = 0;
+                float phase = motor.calPhase(&motor);
+                motor.driveSinWave(phase, motor.power);
+            }
+        } else {
+            motor.brake();
         }
-
-        // static int cnt = 0;
-        // if (cnt == 10) {
-        //     cnt = 0;
-        //     static float i = 0.0f;
-        //     motor.driveSinWave(i, 300);
-        //     i += 0.1f;
-        //     if (i > 2.0f * M_PI) {
-        //         i = 0.0f;
-        //     }
-        // }
-        // cnt++;
     }
 
     if (htim->Instance == TIM16) {  // 1ms
@@ -232,12 +235,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
         if (calRpmCnt == 1000) {
             calRpmCnt = 0;
         }
-        static int printCnt = 0;
-        if (printCnt == 100) {
-            printCnt = 0;
-            // printf("adc2Value: %d, %d\n", adc2Value[0], adc2Value[1]);
-        }
-        printCnt++;
 
         static int powerCnt = 0;
         if (powerCnt == 50) {
@@ -249,8 +246,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM17) {  // 1s
         HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_4);
         HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-        printf("power: %d\n", motor.power);
-        // printf("Toggle LED\n");
     }
 }
 /* USER CODE END 4 */
