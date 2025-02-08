@@ -175,6 +175,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
         motor.motorControlUpdate();
 
         micros += 10;
+
+        if (micros % 20 == 0) {
+            // motor.phase += 0.01f;
+            if (motor.phase >= TWO_PI) {
+                motor.phase = 0.0f;
+            }
+        }
+
         if (micros >= 1000) {
             micros = 0;
         }

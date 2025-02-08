@@ -70,6 +70,38 @@ void Motor::driveSinWave(uint16_t duty, float phase) {
         dutyArr[2 * i] = (float)duty * (sinf(phase + (float)i * TWO_PI / 3.0f) + 1.0f) / 2.0f;
         dutyArr[2 * i + 1] = dutyArr[2 * i];
     }
+
+    sinDuty[0] = dutyArr[0];
+    sinDuty[1] = dutyArr[2];
+    sinDuty[2] = dutyArr[4];
+
+    outputPWM(dutyArr);
+}
+
+void Motor::driveVector(float duty, float phase) {
+    phase *= -1.0f;
+    float vol_d = 0.0f;
+    float vol_q = 4.0f / 1000.0f * duty;
+
+    float vol_alpha = vol_d * cosf(phase) - vol_q * sinf(phase);
+    float vol_beta = vol_d * sinf(phase) + vol_q * cosf(phase);
+
+    float vol_u = 0.81649658 * vol_alpha;
+    float vol_v = -0.40824829 * vol_alpha + 0.707106781 * vol_beta;
+    float vol_w = -0.40824829 * vol_alpha - 0.707106781 * vol_beta;
+
+    uint16_t dutyArr[6] = {0};
+    dutyArr[0] = 500 + vol_u / 8.0f * 1000;
+    dutyArr[1] = 500 + vol_u / 8.0f * 1000;
+    dutyArr[2] = 500 + vol_v / 8.0f * 1000;
+    dutyArr[3] = 500 + vol_v / 8.0f * 1000;
+    dutyArr[4] = 500 + vol_w / 8.0f * 1000;
+    dutyArr[5] = 500 + vol_w / 8.0f * 1000;
+
+    vectorDuty[0] = dutyArr[0];
+    vectorDuty[1] = dutyArr[2];
+    vectorDuty[2] = dutyArr[4];
+
     outputPWM(dutyArr);
 }
 
@@ -79,27 +111,18 @@ void Motor::motorControlUpdate() {
     if (cnt >= 1000000) {
         cnt = 0;
     }
-    if (cnt % ENC_UPDATE_PERIOD == 0) {
-        updateEncVal();  // readEncoder()は内部で呼び出される
-    }
-    if (cnt % CURRENT_SAMPLE_PERIOD == 0) {
+    if (cnt % CONTROL_PERIOD == 0) {
         calcCurrent();
-    }
-    if (cnt % MOTOR_CONTROL_PERIOD == 0) {
-        phase = calcPhase(elecAngle, 0);
-        targetRpm = 2700.0f;
-        pidRpmControl(targetRpm);
-        // targetCurrent = 370.0f;
-        // currentControl(targetCurrent);
-        driveSinWave(duty, phase);
-    }
-    if (cnt % RPM_CALC_PERIOD == 0) {
         calcRpm();
-    }
-    if (cnt % 500 == 0) {
-        char msg[100];
-        uint8_t len = sprintf(msg, "%d,%.2f\n", duty, rpm);
+        duty = 300;
+        phase = calcPhase(elecAngle, turn);
+        driveSinWave(duty, phase);
+
+        char msg[200];
+        uint8_t len = sprintf(msg, "%.1f,%.1f\n", i_d, i_q);
         HAL_UART_Transmit_DMA(&huart2, (uint8_t *)msg, len);
+    } else if (cnt % CONTROL_PERIOD == CONTROL_PERIOD / 2) {
+        updateEncVal();  // モーターのメインの処理と半周期ずらす
     }
 }
 
@@ -137,7 +160,7 @@ void Motor::calcRpm() {
     for (int i = 0; i < RPM_FILTER_WINDOW_SIZE; i++) {
         encDiffSum += encDiffBuf[i];
     }
-    rpm = (float)encDiffSum / (RPM_FILTER_WINDOW_SIZE * RPM_CALC_PERIOD) * 60000000.0f / ENC_RES;
+    rpm = (float)encDiffSum / (RPM_FILTER_WINDOW_SIZE * CONTROL_PERIOD) * 60000000.0f / ENC_RES;
 }
 
 void Motor::pidRpmControl(float targetRpm) {
@@ -214,23 +237,29 @@ void Motor::initCurrentSensor() {
 
 void Motor::calcCurrent() {
     // 電流センサの値を読み取る
+    float currentAvg = 0.0f;
     for (int i = 0; i < 3; i++) {
         adcValBuf[i][adcValBufIdx] = (float)adcVal[i] - vref[i];
-        adcValBufIdx = (adcValBufIdx + 1) % CURRENT_FILTER_WINDOW_SIZE;
+        adcValBufIdx = (adcValBufIdx + 1) % CURRENTS_FILTER_WINDOW_SIZE;
         int32_t adcValSum = 0;
-        for (int j = 0; j < CURRENT_FILTER_WINDOW_SIZE; j++) {
+        for (int j = 0; j < CURRENTS_FILTER_WINDOW_SIZE; j++) {
             adcValSum += adcValBuf[i][j];
         }
-        current[i] = (float)adcValSum / (CURRENT_FILTER_WINDOW_SIZE * ADC2_RES) * ADC2_VREF * 1000.0f / CURRENT_GAIN[i];  // mA
+        current[i] = (float)adcValSum / (CURRENTS_FILTER_WINDOW_SIZE * ADC2_RES) * ADC2_VREF * 1000.0f / CURRENT_GAIN[i];  // mA
+        currentAvg += current[i];
+    }
+    currentAvg /= 3.0f;
+    for (int i = 0; i < 3; i++) {
+        current[i] -= currentAvg;
     }
 
-    uint8_t currentMinIdx = 0;
-    for (int i = 1; i < 3; i++) {
-        if (current[i] < current[currentMinIdx]) {
-            currentMinIdx = i;
-        }
-    }
-    current[currentMinIdx] = -current[0] - current[1] - current[2] + current[currentMinIdx];
+    // uint8_t currentMinIdx = 0;
+    // for (int i = 1; i < 3; i++) {
+    //     if (current[i] < current[currentMinIdx]) {
+    //         currentMinIdx = i;
+    //     }
+    // }
+    // current[currentMinIdx] = -current[0] - current[1] - current[2] + current[currentMinIdx];
 
     float currentNetPositive = 0.0f;
     float currentNetNegative = 0.0f;
@@ -241,7 +270,19 @@ void Motor::calcCurrent() {
             currentNetNegative += current[i];
         }
     }
-    currentNet = (currentNetPositive - currentNetNegative) / 2.0f / CURRENT_GAIN[3];
+    currentNetBuf[currentNetBufIdx] = (currentNetPositive - currentNetNegative) / 2.0f / CURRENT_GAIN[3];
+    currentNetBufIdx = (currentNetBufIdx + 1) % CURRENT_NET_FILTER_WINDOW_SIZE;
+    int32_t currentNetSum = 0;
+    for (int i = 0; i < CURRENT_NET_FILTER_WINDOW_SIZE; i++) {
+        currentNetSum += currentNetBuf[i];
+    }
+    currentNet = (float)currentNetSum / CURRENT_NET_FILTER_WINDOW_SIZE;
+
+    float i_alpha = 1.22474487f * (current[1] - current[0] / 2.0f - current[2] / 2.0f);
+    float i_beta = 1.22474487f * (current[0] * 0.8660254 - current[2] * 0.8660254);
+
+    i_d = i_alpha * cosf(phase) + i_beta * sinf(phase);
+    i_q = -i_alpha * sinf(phase) + i_beta * cosf(phase);
 }
 
 void Motor::measureVref() {

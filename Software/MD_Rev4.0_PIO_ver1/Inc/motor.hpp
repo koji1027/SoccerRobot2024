@@ -9,10 +9,10 @@
 #define KV 400
 
 // モーター制御全般に関する定数
-#define MOTOR_CONTROL_PERIOD 100  // us
-#define ADVANCED_ANGLE 90.0f
+#define CONTROL_PERIOD 1000  // us
+#define ADVANCED_ANGLE PI_2
 #define MOTOR_CALIBRATION_SAMPLE_NUM 20
-#define RPM_CALC_PERIOD 2000  // us
+// #define RPM_CALC_PERIOD 2000  // us
 #define RPM_FILTER_WINDOW_SIZE 10
 #define RPM_P_GAIN 0.002f
 #define RPM_I_GAIN 0.0000005f
@@ -26,17 +26,18 @@
 #define PWM_RES 1000
 
 // エンコーダーに関する定数
-#define ENC_UPDATE_PERIOD 200  // us
+// #define ENC_UPDATE_PERIOD 200  // us
 #define ENC_RES 4096
 #define ENC_ADDR 0x36
 #define ENC_REG_RAW_ANGLE 0x0C
 
 // 電流センサに関する定数
-#define CURRENT_SAMPLE_PERIOD 500  // us
+// #define CURRENT_SAMPLE_PERIOD 500  // us
 #define ADC2_RES 16384
 #define ADC2_VREF 3.3
 #define VREF_SAMPLE_NUM 50
-#define CURRENT_FILTER_WINDOW_SIZE 5
+#define CURRENTS_FILTER_WINDOW_SIZE 5
+#define CURRENT_NET_FILTER_WINDOW_SIZE 5
 
 // その他
 #define PI 3.14159265358979323846f
@@ -58,6 +59,7 @@ class Motor {
     float calcPhase(float elecAngle, bool turn);
     void driveSquareWave(uint16_t duty, float phase);
     void driveSinWave(uint16_t duty, float phase);
+    void driveVector(float duty, float phase);
     void motorCalibration();
     void calcRpm();
     void pidRpmControl(float targetRpm);
@@ -72,6 +74,8 @@ class Motor {
     float targetRpm = 0.0f;
     uint16_t duty = 200.0f;
     float targetCurrent = 0.0f;
+    uint16_t sinDuty[3] = {0};
+    uint16_t vectorDuty[3] = {0};
 
     // モータードライバー
     void outputPWM(uint16_t duty[6]);  // duty:HA, LA, HB, LB, HC, LC
@@ -89,8 +93,10 @@ class Motor {
     uint16_t adcVal[3] = {0};  // A, B, C
     float vref[3] = {0.0f};
     float current[3] = {0};  // IA, IB, IC
-    const float CURRENT_GAIN[4] = {-0.460000f, -0.430000f, -0.425000f, 1.5f};
+    const float CURRENT_GAIN[4] = {1.0, 1.0f, 1.0f, 1.0f};
     float currentNet = 0.0f;
+    float i_d = 0.0f;
+    float i_q = 0.0f;
 
     // その他
     float fastSinf(float radian);
@@ -112,8 +118,10 @@ class Motor {
     void initCurrentSensor();
     void measureVref();
 
-    float adcValBuf[3][CURRENT_FILTER_WINDOW_SIZE] = {0};
+    float adcValBuf[3][CURRENTS_FILTER_WINDOW_SIZE] = {0};
     uint16_t adcValBufIdx = 0;
+    float currentNetBuf[CURRENT_NET_FILTER_WINDOW_SIZE] = {0};
+    uint16_t currentNetBufIdx = 0;
 
     // その他
     void fastSinfInit();
