@@ -47,6 +47,7 @@
 #define MAX_SPEED 1000
 #define MAX_DUTY 1000
 #define ROTOR_POLES_NUM 7
+#define TARGET_RPM 500
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -67,13 +68,13 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint16_t adc1_value = 0;
-
-Encoder enc(adc1_value, MAX_ENC_VAL);
+Encoder enc(MAX_ENC_VAL);
 Driver driver(MAX_DUTY);
 Motor motor(enc, driver, MAX_SPEED, ROTOR_POLES_NUM);
 
 asm(" .global _printf_float");
+
+uint32_t adc2value = 0;
 /* USER CODE END 0 */
 
 /**
@@ -107,20 +108,35 @@ int main(void) {
     MX_TIM2_Init();
     MX_TIM3_Init();
     MX_TIM4_Init();
+    MX_USART1_UART_Init();
+    MX_ADC1_Init();
     MX_TIM15_Init();
     MX_TIM16_Init();
     MX_TIM17_Init();
-    MX_USART1_UART_Init();
-    MX_ADC2_Init();
     MX_OPAMP2_Init();
-    MX_ADC1_Init();
-    MX_OPAMP3_Init();
     /* USER CODE BEGIN 2 */
     setbuf(stdout, NULL);
 
     motor.init();
+
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+
+    // HAL_Delay(2000);
+    printf("Start\n");
+
+    while (1) {
+        __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_2, 0);    // HA
+        __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, 0);    // LA
+        __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_1, 0);    // HB
+        __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, 0);    // LB
+        __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_2, 900);  // HC
+        __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, 900);  // LC
+    }
+
+    HAL_TIM_Base_Start_IT(&htim15);
+    HAL_TIM_Base_Start_IT(&htim16);
+    HAL_TIM_Base_Start_IT(&htim17);
     /* USER CODE END 2 */
 
     /* Infinite loop */
@@ -129,15 +145,6 @@ int main(void) {
         /* USER CODE END WHILE */
 
         /* USER CODE BEGIN 3 */
-        float electricalAngle = motor.getElectricalAngle();
-        uint16_t encRawVal = enc.getEncRawVal();
-        uint16_t encVal = enc.getEncVal();
-        motor.calPhase(0);
-        float phase = motor.getPhase();
-        // printf("electricalAngle: %d, encRawVal: %d, encVal: %d, phase: %d\n", (int)electricalAngle, (int)encRawVal, (int)encVal, (int)phase);
-        motor.controlDriver(1, 300);
-        // HAL_Delay(1);
-        // printf("%d, %d\n", (int)electricalAngle, (int)phase);
     }
     /* USER CODE END 3 */
 }
@@ -188,14 +195,42 @@ void SystemClock_Config(void) {
 extern "C" {
 int _write(int file, char *ptr, int len) {
     HAL_UART_Transmit(&huart1, (uint8_t *)ptr, len, 10);
-    // HAL_UART_Transmit_DMA(&huart1, (uint8_t *)ptr, len);
     return len;
 }
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-    if (htim->Instance == TIM17) {
+    if (htim->Instance == TIM15) {  // 10us
+        static uint16_t driveCnt = 0;
+        if (driveCnt == 10) {
+            motor.calPhase(0);
+            float duty = TARGET_RPM / 400.0f / 7.2f * MAX_DUTY;
+            if (duty > MAX_DUTY) {
+                duty = MAX_DUTY;
+            }
+            motor.controlDriver(1, (uint16_t)duty);
+            driveCnt = 0;
+        }
+        driveCnt++;
+
+        static uint16_t calRpmCnt = 0;
+        if (calRpmCnt == 20) {
+            motor.monitorEnc();
+            calRpmCnt = 0;
+        }
+        calRpmCnt++;
+    }
+    if (htim->Instance == TIM16) {  // 1ms
+        static uint16_t debugCnt = 100;
+        if (debugCnt == 100) {
+            printf("rpm: %f, enc: %d\n", motor.getRpm(), enc.getEncVal());
+            debugCnt = 0;
+        }
+        debugCnt++;
+    }
+    if (htim->Instance == TIM17) {  // 1s
         HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_4);
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
     }
 }
 /* USER CODE END 4 */

@@ -17,7 +17,7 @@
  */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
-#include "main.h"
+#include "main.hpp"
 
 #include "adc.h"
 #include "dma.h"
@@ -171,17 +171,9 @@ void SystemClock_Config(void) {
 
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-    if (htim->Instance == TIM15) {  // 10us
+    if (htim->Instance == TIM15) {  // 100us
         motor.motorControlUpdate();
-
-        micros += 10;
-
-        if (micros % 20 == 0) {
-            // motor.phase += 0.01f;
-            if (motor.phase >= TWO_PI) {
-                motor.phase = 0.0f;
-            }
-        }
+        micros += 100;
 
         if (micros >= 1000) {
             micros = 0;

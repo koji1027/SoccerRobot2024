@@ -10,22 +10,30 @@
 #include "usart.h"
 
 // モーター制御
+Motor::Motor() {
+    enc = Encoder();
+}
+
 void Motor::initAll() {
     initDriver();
-    initEncoder();
+    enc.init();
     initCurrentSensor();
     fastSinfInit();
+    fastCosfInit();
 
     HAL_Delay(200);
 
     measureVref();
     motorCalibration();
+    // encValOffset = 550;
 
-    char msg[] = "Initialized all peripherals\n";
-    uint8_t len = sizeof(msg);
+    HAL_Delay(2000);
+
+    char msg[500];
+    uint8_t len = sprintf(msg, "Initialized all peripherals. Encpder offset: %d\n", enc.getVal(2));
     HAL_UART_Transmit_DMA(&huart2, (uint8_t *)msg, len);
 
-    HAL_Delay(200);
+    HAL_Delay(2000);
 }
 
 float Motor::calcPhase(float elecAngle, bool turn) {
@@ -67,130 +75,82 @@ void Motor::driveSinWave(uint16_t duty, float phase) {
     }
     uint16_t dutyArr[6] = {0};
     for (int i = 0; i < 3; i++) {
-        dutyArr[2 * i] = (float)duty * (sinf(phase + (float)i * TWO_PI / 3.0f) + 1.0f) / 2.0f;
+        dutyArr[2 * i] = ((float)duty * sinf(phase - (float)i * TWO_PI / 3.0f) + PWM_RES) / 2.0f;
         dutyArr[2 * i + 1] = dutyArr[2 * i];
     }
-
-    sinDuty[0] = dutyArr[0];
-    sinDuty[1] = dutyArr[2];
-    sinDuty[2] = dutyArr[4];
-
-    outputPWM(dutyArr);
-}
-
-void Motor::driveVector(float duty, float phase) {
-    phase *= -1.0f;
-    float vol_d = 0.0f;
-    float vol_q = 4.0f / 1000.0f * duty;
-
-    float vol_alpha = vol_d * cosf(phase) - vol_q * sinf(phase);
-    float vol_beta = vol_d * sinf(phase) + vol_q * cosf(phase);
-
-    float vol_u = 0.81649658 * vol_alpha;
-    float vol_v = -0.40824829 * vol_alpha + 0.707106781 * vol_beta;
-    float vol_w = -0.40824829 * vol_alpha - 0.707106781 * vol_beta;
-
-    uint16_t dutyArr[6] = {0};
-    dutyArr[0] = 500 + vol_u / 8.0f * 1000;
-    dutyArr[1] = 500 + vol_u / 8.0f * 1000;
-    dutyArr[2] = 500 + vol_v / 8.0f * 1000;
-    dutyArr[3] = 500 + vol_v / 8.0f * 1000;
-    dutyArr[4] = 500 + vol_w / 8.0f * 1000;
-    dutyArr[5] = 500 + vol_w / 8.0f * 1000;
-
-    vectorDuty[0] = dutyArr[0];
-    vectorDuty[1] = dutyArr[2];
-    vectorDuty[2] = dutyArr[4];
 
     outputPWM(dutyArr);
 }
 
 void Motor::motorControlUpdate() {
-    static uint32_t cnt = 0;
-    cnt += 10;
-    if (cnt >= 1000000) {
-        cnt = 0;
+    static uint32_t micros = 0;
+    static uint32_t millis = 0;
+    static uint32_t seconds = 0;
+    micros += 100;
+    if (micros >= 1000) {
+        micros = 0;
+        millis++;
     }
-    if (cnt % CONTROL_PERIOD == 0) {
+    if (millis >= 1000) {
+        millis = 0;
+        seconds++;
+    }
+
+    if ((1000 * millis + micros) % CONTROL_PERIOD == 0) {
         calcCurrent();
+        enc.updateVal();
         calcRpm();
-        duty = 300;
         phase = calcPhase(elecAngle, turn);
+        duty = 150;
         driveSinWave(duty, phase);
 
         char msg[200];
-        uint8_t len = sprintf(msg, "%.1f,%.1f\n", i_d, i_q);
+        uint8_t len = sprintf(msg, "%f\n", rpm);
         HAL_UART_Transmit_DMA(&huart2, (uint8_t *)msg, len);
-    } else if (cnt % CONTROL_PERIOD == CONTROL_PERIOD / 2) {
-        updateEncVal();  // モーターのメインの処理と半周期ずらす
     }
 }
 
 void Motor::motorCalibration() {
-    HAL_Delay(100);
-    driveSquareWave(500, 0.08f);
-    HAL_Delay(100);
     int32_t encValSum = 0;
-    for (int i = 0; i < MOTOR_CALIBRATION_SAMPLE_NUM; i++) {
-        readEncoder();
-        encValSum += encVal;
-        HAL_Delay(5);
+
+    for (int k = 0; k < MOTOR_CALIBRATION_SAMPLE_NUM; k++) {
+        for (int i = 1; i < 6 * MOTOR_POLE_PAIRS + 1; i++) {
+            driveSquareWave(150, (float)(i % 6) * PI_3);
+            HAL_Delay(3);
+        }
+        enc.updateVal();
+        HAL_Delay(3);
+        encValSum += enc.getVal(0);
     }
-    driveSquareWave(500, 6.20f);
     HAL_Delay(100);
-    for (int i = 0; i < MOTOR_CALIBRATION_SAMPLE_NUM; i++) {
-        readEncoder();
-        encValSum -= encVal;
-        HAL_Delay(5);
+    for (int k = 0; k < MOTOR_CALIBRATION_SAMPLE_NUM; k++) {
+        for (int i = 6 * MOTOR_POLE_PAIRS - 1; i > -1; i--) {
+            driveSquareWave(150, (float)(i % 6) * PI_3);
+            HAL_Delay(3);
+        }
+        enc.updateVal();
+        HAL_Delay(3);
+        encValSum += enc.getVal(0);
     }
-    encValOffset = encValSum / (2 * MOTOR_CALIBRATION_SAMPLE_NUM);
+
+    enc.setOffset(encValSum / (2 * MOTOR_CALIBRATION_SAMPLE_NUM));
 }
 
 void Motor::calcRpm() {
     static uint16_t encValPrev = 0;
-    encDiffBuf[encDiffBufIdx] = encVal - encValPrev;
+    encDiffBuf[encDiffBufIdx] = enc.getVal(1) - encValPrev;
     if (encDiffBuf[encDiffBufIdx] > ENC_RES / 2) {
         encDiffBuf[encDiffBufIdx] -= ENC_RES;
     } else if (encDiffBuf[encDiffBufIdx] < -ENC_RES / 2) {
         encDiffBuf[encDiffBufIdx] += ENC_RES;
     }
     encDiffBufIdx = (encDiffBufIdx + 1) % RPM_FILTER_WINDOW_SIZE;
-    encValPrev = encVal;
+    encValPrev = enc.getVal(1);
     int32_t encDiffSum = 0;
     for (int i = 0; i < RPM_FILTER_WINDOW_SIZE; i++) {
         encDiffSum += encDiffBuf[i];
     }
     rpm = (float)encDiffSum / (RPM_FILTER_WINDOW_SIZE * CONTROL_PERIOD) * 60000000.0f / ENC_RES;
-}
-
-void Motor::pidRpmControl(float targetRpm) {
-    static float integral = 0.0f;
-    static float prevError = 0.0f;
-    float error = targetRpm - rpm;
-    integral += error;
-    float derivative = error - prevError;
-    duty += RPM_P_GAIN * error + RPM_I_GAIN * integral + RPM_D_GAIN * derivative;
-    if (duty > PWM_RES) {
-        duty = PWM_RES;
-    } else if (duty < 0) {
-        duty = 0;
-    }
-    prevError = error;
-}
-
-void Motor::currentControl(float targetCurrent) {
-    static float integral = 0.0f;
-    static float prevError = 0.0f;
-    float error = targetCurrent - currentNet;
-    integral += error;
-    float derivative = error - prevError;
-    duty += CURRENT_P_GAIN * error + CURRENT_I_GAIN * integral + CURRENT_D_GAIN * derivative;
-    if (duty > PWM_RES) {
-        duty = PWM_RES;
-    } else if (duty < 0) {
-        duty = 0;
-    }
-    prevError = error;
 }
 
 // モータードライバー
@@ -210,24 +170,6 @@ void Motor::outputPWM(uint16_t duty[6]) {
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, duty[3]);  // LB
     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, duty[4]);  // HC
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, duty[5]);  // LC
-}
-
-// エンコーダー
-void Motor::initEncoder() {
-    // エンコーダーの設定
-}
-
-void Motor::readEncoder() {
-    // エンコーダーの値を読み取る
-    uint8_t data[2];
-    HAL_I2C_Mem_Read(&hi2c2, ENC_ADDR << 1, ENC_REG_RAW_ANGLE, I2C_MEMADD_SIZE_8BIT, data, 2, 1);
-    encRawVal = (data[0] << 8) | data[1];
-}
-
-void Motor::updateEncVal() {
-    readEncoder();
-    encVal = ((-encRawVal + encValOffset) % ENC_RES + ENC_RES) % ENC_RES;
-    elecAngle = fmodf(fmodf((float)encVal, (float)ELEC_ANGLE) + (float)ELEC_ANGLE, (float)ELEC_ANGLE) / (float)ELEC_ANGLE * TWO_PI;
 }
 
 // 電流センサ
@@ -253,14 +195,6 @@ void Motor::calcCurrent() {
         current[i] -= currentAvg;
     }
 
-    // uint8_t currentMinIdx = 0;
-    // for (int i = 1; i < 3; i++) {
-    //     if (current[i] < current[currentMinIdx]) {
-    //         currentMinIdx = i;
-    //     }
-    // }
-    // current[currentMinIdx] = -current[0] - current[1] - current[2] + current[currentMinIdx];
-
     float currentNetPositive = 0.0f;
     float currentNetNegative = 0.0f;
     for (int i = 0; i < 3; i++) {
@@ -277,12 +211,6 @@ void Motor::calcCurrent() {
         currentNetSum += currentNetBuf[i];
     }
     currentNet = (float)currentNetSum / CURRENT_NET_FILTER_WINDOW_SIZE;
-
-    float i_alpha = 1.22474487f * (current[1] - current[0] / 2.0f - current[2] / 2.0f);
-    float i_beta = 1.22474487f * (current[0] * 0.8660254 - current[2] * 0.8660254);
-
-    i_d = i_alpha * cosf(phase) + i_beta * sinf(phase);
-    i_q = -i_alpha * sinf(phase) + i_beta * cosf(phase);
 }
 
 void Motor::measureVref() {
@@ -306,14 +234,31 @@ void Motor::fastSinfInit() {
     }
 }
 
+void Motor::fastCosfInit() {
+    for (size_t i = 0; i < SIN_TABLE_SIZE; ++i) {
+        cos_table[i] = cosf(i * STEP);
+    }
+}
+
 // 高速正弦関数
 float Motor::fastSinf(float radian) {
     // 入力値の正規化
-    float radian_normalized = fmodf(radian, TWO_PI);
+    float radian_normalized = fmodf(fmodf(radian, TWO_PI) + TWO_PI, TWO_PI);
 
     // テーブルインデックス計算
     float index_f = radian_normalized / STEP;
     size_t index = static_cast<size_t>(index_f + 0.5f) % SIN_TABLE_SIZE;
 
     return sin_table[index];
+}
+
+float Motor::fastCosf(float radian) {
+    // 入力値の正規化
+    float radian_normalized = fmodf(fmodf(radian, TWO_PI) + TWO_PI, TWO_PI);
+
+    // テーブルインデックス計算
+    float index_f = radian_normalized / STEP;
+    size_t index = static_cast<size_t>(index_f + 0.5f) % SIN_TABLE_SIZE;
+
+    return cos_table[index];
 }

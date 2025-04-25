@@ -4,7 +4,7 @@
 
 class Encoder {
    public:
-    Encoder(uint16_t& encVal, const uint16_t encMax) : encRawVal(encVal), encMax(encMax) {}
+    Encoder(const uint16_t encMax) : encMax(encMax) {}
     ~Encoder() {}
 
     void init();
@@ -17,7 +17,7 @@ class Encoder {
     const uint16_t encMax;
 
    private:
-    uint16_t& encRawVal;
+    uint16_t encRawVal;
     uint16_t encVal = 0;
     uint16_t encOffsetVal = 0;
 };

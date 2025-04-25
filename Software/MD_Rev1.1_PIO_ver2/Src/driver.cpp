@@ -32,29 +32,6 @@ void Driver::drive(uint16_t ha, uint16_t hb, uint16_t hc, uint16_t la, uint16_t 
 }
 
 void Driver::driveSquareWave(uint8_t step, uint16_t duty) {
-    /*switch (step) {
-        case 0:  // A -> B
-            this->drive(duty, 0, 0, duty, 0, maxDuty);
-            break;
-        case 1:  // A -> C
-            this->drive(duty, 0, 0, duty, maxDuty, 0);
-            break;
-        case 2:  // B -> C
-            this->drive(0, duty, 0, maxDuty, duty, 0);
-            break;
-        case 3:  // B -> A
-            this->drive(0, duty, 0, 0, duty, maxDuty);
-            break;
-        case 4:  // C -> A
-            this->drive(0, 0, duty, 0, maxDuty, duty);
-            break;
-        case 5:  // C -> B
-            this->drive(0, 0, duty, maxDuty, 0, duty);
-            break;
-        default:  // Break
-            this->drive(0, 0, 0, 0, 0, 0);
-            break;
-    }*/
     if (step == 0) {                                        // A -> B
         __HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_2, duty);  // HA
         __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, duty);  // LA

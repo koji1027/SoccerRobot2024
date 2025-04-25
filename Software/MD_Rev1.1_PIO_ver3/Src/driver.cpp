@@ -33,22 +33,22 @@ void Driver::drive(uint16_t ha, uint16_t hb, uint16_t hc, uint16_t la, uint16_t 
 
 void Driver::driveSquareWave(uint8_t step, uint16_t duty) {
     switch (step) {
-        case 0:
+        case 0:  // A -> B
             drive(duty, 0, 0, duty, 0, 1000);
             break;
-        case 1:
+        case 1:  // A -> C
             drive(duty, 0, 0, duty, 1000, 0);
             break;
-        case 2:
+        case 2:  // B -> C
             drive(0, duty, 0, 1000, duty, 0);
             break;
-        case 3:
+        case 3:  // B -> A
             drive(0, duty, 0, 0, duty, 1000);
             break;
-        case 4:
+        case 4:  // C -> A
             drive(0, 0, duty, 0, 1000, duty);
             break;
-        case 5:
+        case 5:  // C -> B
             drive(0, 0, duty, 1000, 0, duty);
             break;
         default:
